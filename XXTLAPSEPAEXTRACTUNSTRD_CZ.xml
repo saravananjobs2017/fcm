@@ -1,0 +1,529 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<!-- $Header: APSEPAEXTRACTUNSTRD.xml 115.6 2010/11/17 22:19:35 bgoyal noship $ -->
+<!-- dbdrv: exec java oracle/apps/xdo/oa/util XDOLoader.class java &phase=dat checkfile:~PROD:patch/115/publisher/defs:APSEPAEXTRACTUNSTRD.xml UPLOAD -DB_USERNAME &un_apps -DB_PASSWORD &pw_apps -JDBC_CONNECTION &jdbc_db_addr -LOB_TYPE DATA_TEMPLATE -APPS_SHORT_NAME ~PROD -LOB_CODE APXSEPAU -LANGUAGE 00 -XDO_FILE_TYPE XML-DATA-TEMPLATE -FILE_NAME &fullpath:~PROD:patch/115/publisher/defs:APSEPAEXTRACTUNSTRD.xml -->
+<!-- GSCC_Category="Xdo Data Definition" -->
+<dataTemplate name="XXTC_CZSEPA_XML" description="XXTC_CZSEPA_XML" defaultPackage="XXTC_AP_PAYMENT_PROC" version="1.0">
+<properties>
+       <property name="xml_tag_case" value="upper" />
+</properties>
+<parameters>
+     <parameter name="P_PAYMENT_BATCH" dataType="character"/>
+</parameters>
+<dataQuery>
+	<sqlStatement name="Q1">
+		<![CDATA[SELECT  XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(aisc.checkrun_name))             checkrun_name,
+                        TO_CHAR(SYSDATE,'YYYY-MM-DD')||'T'||TO_CHAR(SYSDATE,'HH24')||':'||TO_CHAR(SYSDATE,'mm')||':'||TO_CHAR(SYSDATE,'ss') creation_date,
+                                    DECODE(NVL(acf.batch_booking,   'N'),   
+                             'Y',
+                             'true',
+                             'false')                     batch_booking,
+                      COUNT(asi.check_number)             no_of_trx,
+                                nvl(SUM(asi.amount),0)               total_amount,
+                      NVL(acf.grouping_mode,   'MIXD')    grouping_mode,
+                      XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(hou.name))                            organization_name,
+                                XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(hle.name))                                        legal_entity_name1,     
+                                 (SELECT xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(gl_flexfields_pkg.get_description_sql(chart_of_accounts_id,1,segment1)))
+							FROM gl_code_combinations gcc,ap_bank_accounts_all aba,ap_invoice_selection_criteria aiscc
+							where gcc.code_combination_id = aba.ASSET_CODE_combination_id
+							and aba.bank_account_id = aiscc.bank_account_id
+							and aisc.checkrun_name = aiscc.checkrun_name)		legal_entity_name,   
+						(   select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(vat_registration_num)) from financials_system_parameters where rownum <2)  vat_registration_number ,   
+                      xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_1, CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))  from dual))                  address_line1,
+                      xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_2, CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))  from dual))                  address_line2,
+                      xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_3, CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))  from dual))                   street_name,
+                      xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.postal_code, CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))  from dual))                     postal_code,
+                      xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.town_or_city , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))  from dual))                    town_or_city,
+                      xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.country , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))   from dual))                       country
+                 FROM ap_invoice_selection_criteria aisc,
+                      ap_checks asi,
+                      ap_check_stocks acs,
+                      ap_check_formats acf,
+                      /* hr_all_organization_units hou, Commented for bug#10276888 */
+                      hr_operating_units hou, /* Added for bug#10276888 */
+                      hr_locations loc,
+                                hr_legal_entities hle
+                WHERE aisc.checkrun_name = asi.checkrun_name
+                  AND aisc.check_stock_id = acs.check_stock_id
+                  AND acs.check_format_id = acf.check_format_id
+                           --AND asi.ok_to_pay_flag <> 'N'  
+                   AND aisc.checkrun_name = :P_PAYMENT_BATCH --:P_PAYMENT_BATCH
+                  /* AND hou.location_id    = loc.location_id Commented for bug#10276888 */
+                  AND loc.location_id = 
+                                 (
+                                  SELECT NVL(haou.location_id, haou1.location_id) 
+                                    FROM hr_all_organization_units haou
+                                       , hr_all_organization_units haou1
+                                   WHERE haou.organization_id = hou.organization_id 
+                                     AND haou1.organization_id = hou.legal_entity_id
+                                 )                  
+                  AND hou.organization_id = NVL(asi.org_id, hou.organization_id)
+                    AND hou.legal_entity_id = hle.organization_id
+					and asi.org_id = fnd_profile.value('org_id')
+                GROUP BY hou.organization_id, aisc.checkrun_name,
+                      acf.batch_booking,
+                      acf.grouping_mode,
+                      hou.name,hle.name, 
+                                 hle.vat_registration_number,
+                      loc.address_line_1,
+                      loc.address_line_2,
+                      loc.address_line_3,
+                      loc.postal_code,
+                      loc.town_or_city,
+                      loc.country]]>
+    </sqlStatement>
+	<sqlStatement name="Q2">
+            <![CDATA[SELECT xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(aisc.checkrun_name)))           pay_info_ident,
+                            'TRF'                        pay_method,
+                            'SEPA'                       service_level,
+							'SDCL'						 loc_instm,
+							'NORM' 						 instr_prty,
+							'SUPP'						 ctgy_purp,
+                           TO_CHAR(aisc.check_date,'YYYY-MM-DD') execution_date,
+                           xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(hle.name)))                      legal_entity_name1,
+							(SELECT xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(gl_flexfields_pkg.get_description_sql(chart_of_accounts_id,1,segment1))))
+							FROM gl_code_combinations
+							where code_combination_id = aba.ASSET_CODE_combination_id) legal_entity_name,    
+                           (   select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(vat_registration_num)) from financials_system_parameters where rownum <2)    vat_registration_number,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_1 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))  from dual))            address_line1,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_2 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))            address_line2,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_3 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))            street_name,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.postal_code , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))              postal_code,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.town_or_city , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))            town_or_city,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.country , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))                  country,
+                           xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(NVL(aba.iban_number,'XXXXXXXXXXXXXXXXXXXXXX'))))              debtor_iban,
+						   aba.currency_code            currency_code,
+                           xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(NVL(abb.eft_swift_code,'XXXXXXXXXXX'))))           debtor_bic,
+                           'SLEV'                       bank_charge_code
+                      FROM  ap_invoice_selection_criteria aisc,
+                            /* hr_all_organization_units hou, Commented for bug#10276888 */
+                            hr_operating_units hou, /* Added for bug#10276888 */
+                            hr_locations loc,
+							hr_legal_entities hle,
+                            ap_bank_accounts_all aba,
+                            ap_bank_branches abb
+                     WHERE  aisc.checkrun_name = :P_PAYMENT_BATCH
+                     AND    aisc.bank_account_id = aba.bank_account_id
+                     AND    aba.bank_branch_id = abb.bank_branch_id
+					 AND    abb.EFT_SWIFT_CODE is not null
+					 AND    aba.iban_number is not null
+                     /* AND    hou.location_id = loc.location_id Commented for bug#10276888 */
+                     AND loc.location_id = 
+                                 (
+                                  SELECT nvl(haou.location_id, haou1.location_id) 
+                                    FROM hr_all_organization_units haou
+                                       , hr_all_organization_units haou1
+                                   WHERE haou.organization_id = hou.organization_id 
+                                     AND haou1.organization_id = hou.legal_entity_id
+                                 )                              
+                     AND    hou.organization_id = 
+                nvl(to_number(decode(substrb(userenv('CLIENT_INFO'),   1,   1),
+                    ' ',   NULL, substrb(userenv('CLIENT_INFO'),   1,   10))),  
+                                         hou.organization_id)
+					 AND hou.legal_entity_id = hle.organization_id]]>
+    </sqlStatement>
+    <sqlStatement name="Q3">
+            <![CDATA[SELECT (select decode(abb.country,'SK','/VS'||lpad(apps.convert_to_number(XXTC_CZECH_CHAR_REM(aiaa.invoice_num)),10,0)||'/SS'||lpad(apps.convert_to_number(XXTC_CZECH_CHAR_REM(asac.check_number)),10,0)||'/KS'||decode(XXTC_CZECH_CHAR_REM(aiaa.doc_category_code),'GOLD','0008','0308'),XXTC_CZECH_CHAR_REM(asac.check_number))
+from ap_invoice_payments_all asa,ap_checks asac,ap_invoices_all aiaa,AP_INV_SELECTION_CRITERIA_V aisca
+where asac.check_id = asa.check_id
+and aiaa.invoice_id  = asa.invoice_id
+--and asac.vendor_id = asa.vendor_id
+--and asac.ok_to_pay_flag in ('Y','F')
+and asac.vendor_id = aiaa.vendor_id
+and asac.org_id = fnd_profile.value('org_id')
+and asac.checkrun_name = aisca.checkrun_name
+and asic.checkrun_name = asac.checkrun_name
+and asic.check_id = asa.check_id
+and asic.check_number = asac.check_number
+and rownum <2)  end_to_end_idd  ,
+							xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(asic.check_number)))   end_to_end_id,
+							xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(asic.check_number)))   instruction_id,
+                            asic.amount       amount,
+                            asic.currency_code      currency,
+                            'SLEV'                  bank_charge,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(NVL(abb.eft_swift_code,'XXXXXXXXXXX'))))     benificiary_bank,
+                            xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pv.vendor_name , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))          supplier_name,
+							(select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pv.segment1 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)              supplier_num,         
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(pv.vat_registration_num))) vat_registration_num,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line1 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin1, 
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line2 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin2,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line3 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin3,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.zip , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)             supp_area_code,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.city , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)                supp_city,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.state , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)               supp_state,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.country , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)             supp_country,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(NVL(aba.iban_number,'XXXXXXXXXXXXXXXXXXXXXX'))))         benificiary_accnt,
+                            'SUPP'                    payment_purpose,
+                            pv.vendor_id vendor_id
+                       FROM ap_checks asic,
+                            ap_bank_branches abb,
+                            ap_bank_accounts_all aba,
+                            po_vendors pv,
+                            po_vendor_sites_all pvs
+                      WHERE asic.checkrun_name = :P_PAYMENT_BATCH
+                        AND    abb.EFT_SWIFT_CODE is not null
+                        AND    aba.iban_number is not null
+                        AND pvs.payment_currency_code = 'EUR'
+                        --AND asic.ok_to_pay_flag in ('Y','F')
+                        AND asic.external_bank_account_id = aba.bank_account_id
+                        AND aba.bank_branch_id = abb.bank_branch_id
+						and asic.org_id = fnd_profile.value('org_id')
+                        AND asic.vendor_id = pv.vendor_id
+                        AND asic.vendor_site_id = pvs.vendor_site_id
+                        AND pv.vendor_id = pvs.vendor_id]]>
+    </sqlStatement>
+    <sqlStatement name="Q4">
+            <![CDATA[SELECT distinct ai.invoice_id, -- Bug 7120709
+                xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(ai.doc_category_code))) doc_category_code,
+                decode(ai.invoice_type_lookup_code,   
+                                   'STANDARD',   'CINV',
+                                   'CREDIT',   'CREN',
+                                   'DEBIT',   'DEBN',
+                                   'CINV') DOCUMENT_TYPE, 
+                'SCOR'    CR_REF_TYPE,
+                asic.currency_code CURRENCY, -- For Bug 7022478
+                xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(ai.invoice_num))) INVOICE_NUM,
+                TO_CHAR(ai.invoice_date,'YYYY-MM-DD') INVOICE_DATE,
+                ai.invoice_amount   INVOICE_AMOUNT,
+                nvl(ai.DISCOUNT_AMOUNT_TAKEN,0) INVOICE_DISCOUNT, -- For Bug 6832912
+                asi.amount PAYMENT_AMOUNT, -- For Bug 6832912
+                nvl(ai.tax_amount,0) INVOICE_TAX, -- For Bug 6832912                
+                xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pv.vendor_name , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual)) PAYEE, 
+                xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(hro.name , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual)) PAYER, 
+                xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(asic.check_number)))  CHECK_NUMBER 
+           FROM ap_invoices_all ai,
+                ap_invoice_payments asi,
+                ap_checks asic, -- For Bug 6830294
+                hr_all_organization_units hro, -- For Bug 6832912
+                po_vendors pv
+        WHERE asi.invoice_id = ai.invoice_id
+        AND asi.check_id = asic.check_id -- For Bug 6830294         
+        --AND asi.pay_selected_check_id = asic.check_id -- For Bug 6830294
+       -- AND asi.ok_to_pay_flag <> 'N' -- For Bug 7499172
+        AND hro.organization_id = ai.org_id -- For Bug 6832912
+        AND asic.check_number = :EndToEndId -- For Bug 6830294
+        AND pv.vendor_id = ai.vendor_id
+		and asic.org_id = fnd_profile.value('org_id')
+        AND pv.vendor_id = :vendor_id
+        AND asic.checkrun_name = :P_PAYMENT_BATCH]]>
+    </sqlStatement>
+	<sqlStatement name="Q5">
+            <![CDATA[SELECT xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(aisc.checkrun_name)))           pay_info_identt,
+                            'TRF'                        pay_methodd,
+                            'URGP'                       service_levell,
+							'CITI574'						 loc_instmm,
+							'NORM' 						 instr_prtyy,
+							'SUPP'						 ctgy_purpp,
+                           TO_CHAR(aisc.check_date,'YYYY-MM-DD') execution_datee,
+                           xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(hle.name)))                      legal_entity_name11,
+							(SELECT xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(gl_flexfields_pkg.get_description_sql(chart_of_accounts_id,1,segment1))))
+							FROM gl_code_combinations
+							where code_combination_id = aba.ASSET_CODE_combination_id) legal_entity_namee,    
+                           (   select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(vat_registration_num)) from financials_system_parameters where rownum <2)    vat_registration_numberr,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_1 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))  from dual))            address_line11,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_2 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))            address_line22,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.address_line_3 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))            street_namee,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.postal_code , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))              postal_codee,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.town_or_city , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))             town_or_cityy,
+                           xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(loc.country , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))                  countryy,
+                           xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(NVL(aba.iban_number,'XXXXXXXXXXXXXXXXXXXXXX'))))              debtor_ibann,
+						   aba.currency_code            currency_codee,
+                           xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(NVL(abb.eft_swift_code,'XXXXXXXXXXX'))))           debtor_bicc,
+                           'SLEV'                       bank_charge_codee
+                      FROM  ap_invoice_selection_criteria aisc,
+                            /* hr_all_organization_units hou, Commented for bug#10276888 */
+                            hr_operating_units hou, /* Added for bug#10276888 */
+                            hr_locations loc,
+							hr_legal_entities hle,
+                            ap_bank_accounts_all aba,
+                            ap_bank_branches abb
+                     WHERE  aisc.checkrun_name = :P_PAYMENT_BATCH
+                     AND    aisc.bank_account_id = aba.bank_account_id
+                     AND    aba.bank_branch_id = abb.bank_branch_id
+					 AND    abb.EFT_SWIFT_CODE is not null
+					 AND    aba.iban_number is not null
+                     /* AND    hou.location_id = loc.location_id Commented for bug#10276888 */
+                     AND loc.location_id = 
+                                 (
+                                  SELECT nvl(haou.location_id, haou1.location_id) 
+                                    FROM hr_all_organization_units haou
+                                       , hr_all_organization_units haou1
+                                   WHERE haou.organization_id = hou.organization_id 
+                                     AND haou1.organization_id = hou.legal_entity_id
+                                 )                              
+                     AND    hou.organization_id = 
+                nvl(to_number(decode(substrb(userenv('CLIENT_INFO'),   1,   1),
+                    ' ',   NULL, substrb(userenv('CLIENT_INFO'),   1,   10))),  
+                                         hou.organization_id)
+					 AND hou.legal_entity_id = hle.organization_id
+					 AND &l_condition]]>
+    </sqlStatement>
+	<sqlStatement name="Q6">
+            <![CDATA[((SELECT (select decode(abb.country,'SK','/VS'||lpad(apps.convert_to_number(XXTC_CZECH_CHAR_REM(aiaa.invoice_num)),10,0)||'/SS'||lpad(apps.convert_to_number(XXTC_CZECH_CHAR_REM(asac.check_number)),10,0)||'/KS'||decode(XXTC_CZECH_CHAR_REM(aiaa.doc_category_code),'GOLD','0008','0308'),XXTC_CZECH_CHAR_REM(asac.check_number))
+from ap_invoice_payments_all asa,ap_checks asac,ap_invoices_all aiaa,AP_INV_SELECTION_CRITERIA_V aisca
+where asac.check_id = asa.check_id
+and aiaa.invoice_id  = asa.invoice_id
+--and asac.ok_to_pay_flag in ('Y','F')
+and asac.vendor_id = aiaa.vendor_id
+and asac.checkrun_name = aisca.checkrun_name
+and asic.checkrun_name = asac.checkrun_name
+and asic.check_id = asa.check_id
+and asic.check_number = asac.check_number
+and asac.org_id = fnd_profile.value('org_id')
+and rownum <2) end_to_end_idd2  ,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(asic.check_number)))   end_to_end_iddd,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(asic.check_number)))   instruction_idd,
+                            asic.amount       amountt,
+                            asic.currency_code      currencyy,
+                            'SLEV'                  bank_chargee,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(abb.eft_swift_code)))     benificiary_bankk,
+                            xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pv.vendor_name , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))         supplier_namee,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pv.segment1 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)              supplier_numm,         
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(pv.vat_registration_num))) vat_registration_numm,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line1 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin11, 
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line2 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin22,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line3 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin33,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.zip , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8') ))) from dual)             supp_area_codee,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.city , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)                supp_cityy,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.state , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)               supp_statee,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.country , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)             supp_countryy,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(aba.iban_number)))         benificiary_accntt,
+                            'SUPP'                    payment_purposee,
+                            pv.vendor_id vendor_idd,
+                            aba.bank_account_num supp_bnk_act_num,
+                            abb.bank_name bnk_name,
+                            abb.address_line1 bnk_adr1,
+                            abb.address_line2 bnk_adr2,
+                            abb.country bnk_crty
+                       FROM ap_checks asic,
+                            ap_bank_branches abb,
+                            ap_bank_accounts_all aba,
+                            po_vendors pv,
+                            po_vendor_sites_all pvs
+                      WHERE asic.checkrun_name = :P_PAYMENT_BATCH
+                        AND    (abb.EFT_SWIFT_CODE is null or aba.iban_number is null)
+                        --AND pvs.payment_currency_code = 'EUR'
+                       -- AND asic.ok_to_pay_flag in ('Y','F')
+                        AND asic.external_bank_account_id = aba.bank_account_id
+                        AND aba.bank_branch_id = abb.bank_branch_id
+                        AND asic.vendor_id = pv.vendor_id
+                        AND asic.vendor_site_id = pvs.vendor_site_id
+                        AND pv.vendor_id = pvs.vendor_id
+						and asic.org_id = fnd_profile.value('org_id')
+                        AND &l_condition)
+                        union
+                        (SELECT (select decode(abb.country,'SK','/VS'||lpad(XXTC_CZECH_CHAR_REM(aiaa.invoice_num),10,0)||'/SS'||lpad(XXTC_CZECH_CHAR_REM(asac.check_number),10,0)||'/KS'||decode(XXTC_CZECH_CHAR_REM(aiaa.doc_category_code),'GOLD','0008','0308'),XXTC_CZECH_CHAR_REM(asac.check_number))
+from ap_invoice_payments_all asa,ap_checks asac,ap_invoices_all aiaa,AP_INV_SELECTION_CRITERIA_V aisca
+where asac.check_id = asa.check_id
+and aiaa.invoice_id  = asa.invoice_id
+--and asac.ok_to_pay_flag in ('Y','F')
+and asac.vendor_id = aiaa.vendor_id
+and asac.checkrun_name = aisca.checkrun_name
+and asic.checkrun_name = asac.checkrun_name
+and asic.check_id = asa.check_id
+and asac.org_id = fnd_profile.value('org_id')
+and asic.check_number = asac.check_number
+and rownum <2) end_to_end_idd2  ,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(asic.check_number)))   end_to_end_iddd,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(asic.check_number)))   instruction_idd,
+                            asic.amount       amountt,
+                            asic.currency_code      currencyy,
+                            'SLEV'                  bank_chargee,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(abb.eft_swift_code)))     benificiary_bankk,
+                            xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pv.vendor_name , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual))          supplier_namee,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pv.segment1 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)              supplier_numm,         
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(pv.vat_registration_num))) vat_registration_numm,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line1 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin11, 
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line2 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin22,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.address_line3 , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)       supp_add_lin33,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.zip , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)             supp_area_codee,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.city , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)                supp_cityy,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.state , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)               supp_statee,
+                            (select xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pvs.country , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8')))) from dual)             supp_countryy,
+                            xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(aba.iban_number)))         benificiary_accntt,
+                            'SUPP'                    payment_purposee,
+                            pv.vendor_id vendor_idd,
+                            aba.bank_account_num supp_bnk_act_num,
+                            abb.bank_name bnk_name,
+                            abb.address_line1 bnk_adr1,
+                            abb.address_line2 bnk_adr2,
+                            abb.country bnk_crty
+                       FROM ap_checks asic,
+                            ap_bank_branches abb,
+                            ap_bank_accounts_all aba,
+                            po_vendors pv,
+                            po_vendor_sites_all pvs
+                      WHERE asic.checkrun_name = :P_PAYMENT_BATCH
+                        AND    (abb.EFT_SWIFT_CODE is not null or aba.iban_number is not null)
+                        AND pvs.payment_currency_code != 'EUR'
+                        --AND asic.ok_to_pay_flag in ('Y','F')
+                        AND asic.external_bank_account_id = aba.bank_account_id
+                        AND aba.bank_branch_id = abb.bank_branch_id
+                        AND asic.vendor_id = pv.vendor_id
+                        AND asic.vendor_site_id = pvs.vendor_site_id
+						and asic.org_id = fnd_profile.value('org_id')
+                        AND pv.vendor_id = pvs.vendor_id
+                        AND &l_condition))]]>
+    </sqlStatement>
+	<sqlStatement name="Q7">
+            <![CDATA[SELECT distinct ai.invoice_id invoice_idd, -- Bug 7120709
+				xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(ai.doc_category_code))) doc_category_codee,
+				decode(ai.invoice_type_lookup_code,   
+                                   'STANDARD',   'CINV',
+                                   'CREDIT',   'CREN',
+                                   'DEBIT',   'DEBN',
+                                   'CINV') DOCUMENT_TYPEE, 
+				'SCOR'    CR_REF_TYPEE,
+				asic.currency_code CURRENCYY, -- For Bug 7022478
+				xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(ai.invoice_num))) INVOICE_NUMM,
+				TO_CHAR(ai.invoice_date,'YYYY-MM-DD') INVOICE_DATEE,
+				ai.invoice_amount   INVOICE_AMOUNTT,
+				nvl(ai.DISCOUNT_AMOUNT_TAKEN,0) INVOICE_DISCOUNTT, -- For Bug 6832912
+				asi.amount PAYMENT_AMOUNTT, -- For Bug 6832912
+				nvl(ai.tax_amount,0) INVOICE_TAXX, -- For Bug 6832912				
+				xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(pv.vendor_name , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual)) PAYEEE, 
+                xxtc_rem_spl_char((select XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(CONVERT (TRANSLATE(hro.name , CHR(50334)||CHR(50335)||CHR(50352)||CHR(50353), 'GgIi'),'US7ASCII','UTF8'))) from dual)) PAYERR, 
+                xxtc_rem_spl_char(XXTC_REM_SPLCHAR_SEPA(XXTC_CZECH_CHAR_REM(asic.check_number)))  CHECK_NUMBERR 
+           FROM ap_invoices_all ai,
+                ap_invoice_payments_all asi,
+                ap_checks asic, -- For Bug 6830294
+                hr_all_organization_units hro, -- For Bug 6832912
+                po_vendors pv
+        WHERE asi.invoice_id = ai.invoice_id
+        AND asi.check_id = asic.check_id -- For Bug 6830294
+       -- AND asi.pay_selected_check_id = asic.selected_check_id -- For Bug 6830294
+       -- AND asi.ok_to_pay_flag <> 'N' -- For Bug 7499172
+        AND hro.organization_id = ai.org_id -- For Bug 6832912
+        AND asic.check_number = :EndToEndIddd -- For Bug 6830294
+        AND pv.vendor_id = ai.vendor_id
+		and asic.org_id = fnd_profile.value('org_id')
+        AND pv.vendor_id = :vendor_idd
+        AND asic.checkrun_name = :P_PAYMENT_BATCH
+        AND &l_condition]]>
+    </sqlStatement>
+</dataQuery>
+<dataTrigger name="beforeReportTrigger" source="XXTC_AP_PAYMENT_PROC.check_pmt_frmts" />
+<dataStructure>
+	<group name="GrpHdr" source="Q1" >
+           <element name="MsgId" value="CHECKRUN_NAME" />
+           <element name="CreDtTm" value="CREATION_DATE" />
+           <element name="BtchBookg" value="BATCH_BOOKING" />
+           <element name="NbOfTxs" value="NO_OF_TRX" />
+           <element name="Grpg" value="GROUPING_MODE" />
+           <element name="Nm" value="LEGAL_ENTITY_NAME" />          
+		   <element name="CtrlSum" value="TOTAL_AMOUNT" />
+		   <element name="TaxIdNb" value="VAT_REGISTRATION_NUMBER" />				   
+	</group>
+	<group name="PmtInf" source="Q2" >
+		<element name="Pinf" value="PAY_INFO_IDENT" />
+		<element name="PmtMtd" value="PAY_METHOD" />
+		<element name="ReqdExctnDt" value="EXECUTION_DATE" />
+		<element name="Nm" value="LEGAL_ENTITY_NAME" />
+		<element name="AdrLine1" value="ADDRESS_LINE1" />
+		<element name="AdrLine2" value="ADDRESS_LINE2" />
+		<element name="Ctry"   value="COUNTRY" />
+		<element name="Id"   value="DEBTOR_IBAN" />
+		<element name="BIC"   value="DEBTOR_BIC" />
+		<element name="SrvLvl" value="SERVICE_LEVEL" />
+		<element name="LocInst" value="LOC_INSTM" /> <!-- Avinash -->
+		<element name="BnkChr" value="BANK_CHARGE_CODE" />
+		<element name="InstrPrty" value="INSTR_PRTY"/>
+		<element name="CtgyPurp" value="CTGY_PURP"/>
+		<element name="Ccy" value="CURRENCY_CODE" />
+		<element name="TaxIdNb" value="VAT_REGISTRATION_NUMBER" />		
+		<group name="CdtTrfTxInf" source="Q3" >
+			<element name="EndToEndIdd" value="END_TO_END_IDD" />
+			<element name="EndToEndId" value="END_TO_END_ID" />
+            <element name="InstdAmt" value="AMOUNT" />
+            <element name="Curr" value="CURRENCY" />
+            <element name="ChrgBr" value="BANK_CHARGE" />
+            <element name="BIC"   value="BENIFICIARY_BANK" />
+            <element name="Nm" value="SUPPLIER_NAME" />
+           	<element name="AdrLine1" value="SUPP_ADD_LIN1" />
+			<element name="AdrLine2" value="SUPP_ADD_LIN2" />
+            <element name="BldgNb" value="SUPP_ADD_LIN3" />
+            <element name="PstCd"  value="SUPP_AREA_CODE" />
+            <element name="TwnNm"  value="SUPP_CITY" />
+            <element name="Ctry"   value="SUPP_COUNTRY" />
+            <element name="Id"   value="BENIFICIARY_ACCNT" />
+			<element name="InstrId"   value="INSTRUCTION_ID" />			
+			<element name="PrtryId"   value="SUPPLIER_NUM" />
+			<element name="TaxIdNb"   value="VAT_REGISTRATION_NUM" />						
+			<element name="Cd" value="PAYMENT_PURPOSE" />
+           	<group name="RmtInf" source="Q4" >
+				<element name="Cd" value="CR_REF_TYPE" />
+				<element name="Ccy" value="CURRENCY" />
+                <element name="RfrdDocNb" value="INVOICE_NUM" />
+				<element name="Docc" value="doc_category_code" /><!--Avinash -->
+                <element name="RfrdDocRltdDt" value="INVOICE_DATE" />
+				<element name="DuePyblAmt" value="INVOICE_AMOUNT" />
+				<element name="DscntApldAmt" value="INVOICE_DISCOUNT" />
+				<element name="RmtdAmt" value="PAYMENT_AMOUNT" />
+				<element name="TaxAmt" value="INVOICE_TAX" />
+				<element name="Invcr" value="PAYEE" />
+				<element name="Invcee" value="PAYER" />
+				<element name="Issr" value="PAYEE" />
+				<element name="CdtrRef" value="INVOICE_NUM" />
+			</group>  
+        </group>
+	</group>
+	<group name="PmtInff" source="Q5" >
+		<element name="Pinff" value="PAY_INFO_IDENTT" />
+		<element name="PmtMtdd" value="PAY_METHODD" />
+		<element name="ReqdExctnDtt" value="EXECUTION_DATEE" />
+		<element name="Nmm" value="LEGAL_ENTITY_NAMEE" />
+		<element name="AdrLine11" value="ADDRESS_LINE11" />
+		<element name="AdrLine22" value="ADDRESS_LINE22" />
+		<element name="Ctryy"   value="COUNTRYY" />
+		<element name="Idd"   value="DEBTOR_IBANN" />
+		<element name="BICC"   value="DEBTOR_BICC" />
+		<element name="SrvLvll" value="SERVICE_LEVELL" />
+		<element name="LocInstt" value="LOC_INSTMM" /> <!-- Avinash -->
+		<element name="BnkChrr" value="BANK_CHARGE_CODEE" />
+		<element name="InstrPrtyy" value="INSTR_PRTYY"/>
+		<element name="CtgyPurpp" value="CTGY_PURPP"/>
+		<element name="Ccyy" value="CURRENCY_CODEE" />
+		<element name="TaxIdNbb" value="VAT_REGISTRATION_NUMBERR" />	
+		<group name="CdtTrfTxInff" source="Q6" >
+			<element name="EndToEndIdd2" value="END_TO_END_IDD2" />
+			<element name="EndToEndIddd" value="END_TO_END_IDDD" />
+            <element name="InstdAmtt" value="AMOUNTT" />
+            <element name="Currr" value="CURRENCYY" />
+            <element name="ChrgBrr" value="BANK_CHARGEE" />
+            <element name="BICC"   value="BENIFICIARY_BANKK" />
+            <element name="Nmm" value="SUPPLIER_NAMEE" />
+           	<element name="AdrLine11" value="SUPP_ADD_LIN11" />
+			<element name="AdrLine22" value="SUPP_ADD_LIN22" />
+            <element name="BldgNbb" value="SUPP_ADD_LIN33" />
+            <element name="PstCdd"  value="SUPP_AREA_CODEE" />
+            <element name="TwnNmm"  value="SUPP_CITYY" />
+            <element name="Ctryy"   value="SUPP_COUNTRYY" />
+            <element name="Iddd"   value="BENIFICIARY_ACCNTT" />
+			<element name="InstrIdd"   value="INSTRUCTION_IDD" />			
+			<element name="PrtryIdd"   value="SUPPLIER_NUMM" />
+			<element name="TaxIdNbb"   value="VAT_REGISTRATION_NUMM" />						
+			<element name="Cdd" value="PAYMENT_PURPOSEE" />
+			<element name="Sbanu" value="SUPP_BNK_ACT_NUM" />
+			<element name="Sbknm" value="BNK_NAME" />
+			<element name="Sbkad1" value="BNK_ADR1" />
+			<element name="Sbkad2" value="BNK_ADR2" />
+			<element name="Sbkcty" value="BNK_CRTY" />
+			<group name="RmtInff" source="Q7" >
+				<element name="Cdd" value="CR_REF_TYPEE" />
+				<element name="Ccyy" value="CURRENCYY" />
+                <element name="RfrdDocNbb" value="INVOICE_NUMM" />
+				<element name="Doccc" value="doc_category_codee" /><!--Avinash -->
+                <element name="RfrdDocRltdDtt" value="INVOICE_DATEE" />
+				<element name="DuePyblAmtt" value="INVOICE_AMOUNTT" />
+				<element name="DscntApldAmtt" value="INVOICE_DISCOUNTT" />
+				<element name="RmtdAmtt" value="PAYMENT_AMOUNTT" />
+				<element name="TaxAmtt" value="INVOICE_TAXX" />
+				<element name="Invcrr" value="PAYEEE" />
+				<element name="Invceee" value="PAYERR" />
+				<element name="Issrr" value="PAYEEE" />
+				<element name="CdtrReff" value="INVOICE_NUMM" />
+			</group>
+		</group>	
+	</group>
+</dataStructure>
+<dataTrigger name="afterReportTrigger" source="XXTC_AP_PAYMENT_PROC.set_formatted_status(:P_PAYMENT_BATCH,'FORMAT','FORMATTED','XXTLAPXSEPAUSDCZ')" /> 
+</dataTemplate>

@@ -1,0 +1,220 @@
+#!/usr/bin/ksh
+# PROGRAM NAME:  XXTCAPFTCITISK.prog
+#
+#
+# PURPOSE     : This script ftp's AP Payment file to common out_tray.
+#
+# COMMAND LINE: initiated from the application
+#
+#
+# PARAMETERS  :  5 = File pathname
+#                6 = Target host (obselete)
+#                7 = Target directory (obselete)
+#
+# DEPENDENCIES:
+#
+# CALLED BY   :
+#
+# HISTORY     :  DD-MON-YY    COMMENT
+#
+#                16-DEC-2020  Script to Transfer SEPA file (xml) to sk_out_tray
+#  
+# ----------------------------------------------------------------------------------------
+#
+#
+#
+# Initialise location specific environment variables
+# ***************************************************************
+SQL_USER_PASS=$1
+APP_USER_ID=$2
+P_FILE_NAME=$5
+P_DEST_HOST=$6
+P_DEST_DIR=$7
+P_TRANSFER_FILE=$8  # -- ruban.p *Wintel server is not in use 23-JAN-2017*
+
+set -x
+
+export P_DEST_DIR=`eval "echo $P_DEST_DIR"`
+export P_FILE_NAME=`eval "echo $P_FILE_NAME"`
+
+timestamp=`date "+%Y%m%d_%H:%M:%S"`
+filedir=`dirname ${P_FILE_NAME}`
+filename=`basename ${P_FILE_NAME}`
+logfile="${P_FILE_NAME}.${timestamp}.log"
+
+#export filedir=`eval "echo $filedir"`
+
+
+
+if [ -a ${logfile} ]
+  then
+    rm -f ${logfile}
+fi
+
+#
+#    move file from process to history and common out_tray
+#
+process=`dirname $P_FILE_NAME`
+data_file=`basename $P_FILE_NAME`
+data_file_without_ext=`echo $data_file | sed 's/\.[^.]*$//'`
+if_base=`dirname $process`
+out_tray=$if_base/out_tray
+history=$if_base/history
+bank=`dirname $if_base`
+org=`dirname $bank`
+int=`dirname $org`
+out_tray_sk=$int/bank/SK/pmt/sk_out_tray
+out_tray_cz=$int/bank/CZ/pmt/cz_out_tray
+country=`dirname $process`
+country=`dirname $country`
+country=`dirname $country`
+country=`basename $country`
+
+echo "Country is $country"
+
+mover_timestamp=`date '+%Y%m%d'`
+
+if [ $country == "HU" ] || [ $country == "HUMO" ] || [ $country == "HUTBS" ] || [ $country == "HUPH" ] 
+then
+cp $P_FILE_NAME $history/${data_file_without_ext}.${mover_timestamp}
+mv $P_FILE_NAME $out_tray_hu
+rm -f $process/$data_file
+if [ -f $out_tray_hu/$data_file ]
+      then
+        touch $out_tray_hu/${data_file_without_ext}.ok
+        echo "OK file created"
+    fi
+elif [ $country == "CZ" ] || [ $country == "CZDSBR" ] || [ $country == "CZDSHK" ] || [ $country == "CZDSPA" ] || [ $country == "CZDSPZ" ] || [ $country == "CZLE" ] || [ $country == "CZLET" ] || [ $country == "CZLIB" ] || [ $country == "CZPR" ] || [ $country == "EDEN" ] || [ $country == "EUIT" ] || [ $country == "TFS" ] || [ $country == "CZDSPH" ] || [ $country == "CZRPHK" ] || [ $country == "CZSMPL" ]
+then
+cp $P_FILE_NAME $history/${data_file_without_ext}.${mover_timestamp}
+mv $P_FILE_NAME $out_tray_cz
+mv $out_tray_cz/$data_file $out_tray_cz/'CITI_XML_'$data_file 
+rm -f $process/$data_file
+if [ -f $out_tray_cz/'CITI_XML_'$data_file ]
+      then
+        touch $out_tray_cz/'CITI_XML_'${data_file_without_ext}.ok
+        echo "OK file created"
+    fi
+elif [ $country == "PL" ] || [ $country == "JP" ] || [ $country == "PLJE" ] || [ $country == "PLKI" ] || [ $country == "PLMO" ] || [ $country == "PLTD" ]
+then
+cp $P_FILE_NAME $history/${data_file_without_ext}.${mover_timestamp}
+mv $P_FILE_NAME $out_tray_pl
+rm -f $process/$data_file
+if [ -f $out_tray_pl/$data_file ]
+      then
+        touch $out_tray_pl/${data_file_without_ext}.ok
+        echo "OK file created"
+    fi
+elif [ $country == "SK" ] || [ $country == "SKDS" ] || [ $country == "SKDSBA" ] || [ $country == "SKDSKO" ] || [ $country == "SKDSNI" ] || [ $country == "SKDSPR" ] || [ $country == "SKDSZI" ] || [ $country == "SKPH" ] || [ $country == "TICB" ] || [ $country == "TIF" ]
+then
+cp $P_FILE_NAME $history/${data_file_without_ext}.${mover_timestamp}
+mv $P_FILE_NAME $out_tray_sk
+mv $out_tray_sk/$data_file $out_tray_sk/'CITI_XML_'$data_file 
+rm -f $process/$data_file
+if [ -f $out_tray_sk/'CITI_XML_'$data_file ]
+      then
+        touch $out_tray_sk/'CITI_XML_'${data_file_without_ext}.ok
+        echo "OK file created"
+    fi
+else
+cp $P_FILE_NAME $history/${data_file_without_ext}.${mover_timestamp}
+mv $P_FILE_NAME $out_tray
+rm -f $process/$data_file
+fi
+
+echo "File $data_pathname moved into out_tray"
+
+#
+#    prepare temp directory for old files
+#
+# rm -rf /tmp/OFI_TMP_CITI
+# mkdir /tmp/OFI_TMP_CITI
+
+
+#
+# Create OK file, for Turkey only
+#
+
+if [ $country == "TR" ]
+  then
+    if [ -f $out_tray/$data_file ]
+      then
+        touch $out_tray/${data_file_without_ext}.ok
+        echo "OK file created"
+    fi
+fi
+#
+#    if    transfer file is set to yes, then transfer file
+#
+if    [ ${P_TRANSFER_FILE} = "Y" ]    
+then
+
+export filedir=`eval "echo $out_tray"`
+
+echo
+echo "AP EFT File Transfer"   | tee -a ${logfile}
+echo "Process started at `date`"        | tee -a ${logfile}
+echo "----------------------------------" | tee -a ${logfile}
+
+echo    "filedir   =" $filedir
+echo    "filename  =" $filename
+echo    "target dir=" $P_DEST_DIR
+
+# FTP_CMD=`sqlplus -s ${SQL_USER_PASS} <<EOS
+# set heading off
+# set feedback off
+# set verify off
+# set linesize 1000
+# select 
+# 'user '|| fnd_profile.value('XXTC_AP_EFT_TARGET_USER')||' '||fnd_profile.value('XXTC_AP_EFT_TARGET_PWD')||chr(10)||
+# 'binary'||chr(10)||
+# --'prompt'||chr(10)|| --set to off (allready in off state)
+# 'lcd /tmp/OFI_TMP_CITI'||chr(10)||
+# 'mget ${P_DEST_DIR}/*'||chr(10)||
+# 'mdelete ${P_DEST_DIR}/*'||chr(10)||
+# 'cd _HISTORY/${P_DEST_DIR}'||chr(10)||
+# 'mput *'
+# from dual;
+# EOS`
+
+FTP_CMD1=`sqlplus -s ${SQL_USER_PASS} <<EOS
+set heading off
+set feedback off
+set verify off
+set linesize 1000
+select 
+'user '|| fnd_profile.value('XXTC_AP_EFT_TARGET_USER')||' '||fnd_profile.value('XXTC_AP_EFT_TARGET_PWD')||chr(10)||
+'binary'||chr(10)||
+'put ${filedir}/${filename} ${P_DEST_DIR}/${filename}'
+from dual;
+EOS`
+
+# echo "FTP commands - part 1" | tee -a ${logfile}
+# echo "$FTP_CMD"   | tee -a ${logfile}
+# echo | tee -a ${logfile}
+echo "FTP commands - part 2" | tee -a ${logfile}
+echo "$FTP_CMD1"   | tee -a ${logfile}
+echo | tee -a ${logfile}
+
+# echo "Starting FTP_CMD"   | tee -a ${logfile}
+# echo "$FTP_CMD"   | ftp -inv ${P_DEST_HOST} >>${logfile} 2>&1
+
+echo "Starting FTP_CMD1"   | tee -a ${logfile}
+echo "$FTP_CMD1"  | ftp -inv ${P_DEST_HOST} >>${logfile} 2>&1
+
+echo | tee -a ${logfile}
+
+if grep -q '226' ${logfile}
+then
+        echo  "Successful file transfer ..." | tee -a ${logfile}
+else
+        echo  "File Transfer failed ..." | tee -a ${logfile}
+        exit 1
+fi
+fi
+
+# rm -rf /tmp/OFI_TMP_CITI
+
+echo "Process finished successfuly at `date`. Exiting ..." | tee -a ${logfile}
+cat ${logfile}
+exit
